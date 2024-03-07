@@ -1,0 +1,9 @@
+﻿* AIMMS
+rounding_compatibility Aimms_3_7
+use_UTC_forCaseAndStartEndDate 1
+* CBC 2.9
+* IPOPT 3.11
+* NETSOL
+* Environment
+Startup_Procedure "MainExecution"
+Default_UI 0

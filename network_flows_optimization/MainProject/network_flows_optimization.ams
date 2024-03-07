@@ -1,0 +1,518 @@
+## ams_version=1.0
+
+Model Main_network_flows_optimization {
+	Section secInitialization {
+		DeclarationSection decInputDataFileName {
+			StringParameter spInputDataFileName {
+				InitialData: "data/data_0.xlsx";
+			}
+		}
+		DeclarationSection decIdentifiersToClean {
+			Set sIdentifiersToClean {
+				SubsetOf: AllIdentifiers;
+			}
+		}
+	}
+	Section secInputData {
+		DeclarationSection decInputIdentifiers {
+			Set sSources {
+				Index: iSource;
+			}
+			Set sCustomers {
+				Index: iCustomer;
+			}
+			Parameter pProductionLimit {
+				IndexDomain: iSource;
+			}
+			Parameter pDemandLimit {
+				IndexDomain: iCustomer;
+			}
+			Parameter pTransportationCost {
+				IndexDomain: (iSource,iCustomer);
+			}
+			Parameter pMinQuantityMandatory {
+				IndexDomain: (iSource,iCustomer);
+			}
+		}
+		Procedure procReadInputDataFromExcel {
+			Body: {
+				if FileExists(spInputDataFileName) then
+				
+					if axll::WorkBookIsOpen(spInputDataFileName) then
+				         	axll::SelectWorkBook(spInputDataFileName);
+					else
+				       		axll::OpenWorkBook(spInputDataFileName);
+					endif;
+				
+					axll::SelectSheet(SheetName : "Hoja1" );
+				
+					axll::ReadSet(
+				    		SetReference    : sSources,
+				    		SetRange        : "B7:B8",
+				    		ExtendSuperSets : 0);
+				
+					axll::ReadSet(
+				    		SetReference    : sCustomers,
+				    		SetRange        : "B13:B18",
+				    		ExtendSuperSets : 0);
+				
+					axll::ReadList(
+				        	IdentifierReference    : pProductionLimit,
+				        	RowHeaderRange         : "B7:B8",
+				        	DataRange              : "C7:C8",
+				        	ModeForUnknownElements :  0,
+				        	MergeWithExistingData  :  0);
+				
+					axll::ReadList(
+				        	IdentifierReference    : pDemandLimit,
+				        	RowHeaderRange         : "B13:B18",
+				        	DataRange              : "C13:C18",
+				        	ModeForUnknownElements :  0,
+				        	MergeWithExistingData  :  0);
+				
+					axll::ReadTable(
+				        	IdentifierReference    : pTransportationCost,
+				        	RowHeaderRange         : "B24:B25" ,
+				        	ColumnHeaderRange      : "C23:H23" ,
+				        	DataRange              : "C24:H25",
+				        	ModeForUnknownElements :  0,
+				        	MergeWithExistingData  :  0);
+				
+					axll::ReadTable(
+				        	IdentifierReference    : pMinQuantityMandatory,
+				        	RowHeaderRange         : "B32:B33" ,
+				        	ColumnHeaderRange      : "C31:H31" ,
+				        	DataRange              : "C32:H33",
+				        	ModeForUnknownElements :  0,
+				        	MergeWithExistingData  :  0);
+				
+					axll::CloseAllWorkBooks();
+				
+				else
+				
+					DialogError("The input data file does not exist", "Error");
+				
+				endif;
+			}
+		}
+	}
+	Section secOptimizationModel {
+		DeclarationSection decDecisionVariables {
+			Variable vQuantityExchanged {
+				IndexDomain: (iSource,iCustomer);
+				Range: nonnegative;
+				Property: ReducedCost;
+			}
+		}
+		DeclarationSection decConstraints {
+			Constraint cProductionLimit {
+				IndexDomain: iSource;
+				Property: ShadowPrice;
+				Definition: {
+					sum(iCustomer, vQuantityExchanged(iSource, iCustomer))
+						<=
+					pProductionLimit(iSource)
+				}
+			}
+			Constraint cDemandLimit {
+				IndexDomain: iCustomer;
+				Property: ShadowPrice;
+				Definition: {
+					sum(iSource, vQuantityExchanged(iSource, iCustomer))
+						>=
+					pDemandLimit(iCustomer)
+				}
+			}
+			Constraint cMinQuantityMandatory {
+				IndexDomain: (iSource,iCustomer) | pMinQuantityMandatory(iSource, iCustomer);
+				Definition: {
+					vQuantityExchanged(iSource, iCustomer)
+						= 
+					pMinQuantityMandatory(iSource, iCustomer)
+				}
+			}
+		}
+		DeclarationSection decObjectiveFunction {
+			Variable vTotalCost {
+				Range: free;
+				Definition: {
+					sum(
+						(iSource,iCustomer),
+						pTransportationCost(iSource, iCustomer) * vQuantityExchanged(iSource, iCustomer)
+					)
+				}
+			}
+		}
+		DeclarationSection decProblem {
+			MathematicalProgram mpProblem {
+				Objective: vTotalCost;
+				Direction: minimize;
+				Constraints: sActiveConstraints;
+				Variables: sActiveDecisionVariables;
+				Type: Automatic;
+			}
+			Set sActiveDecisionVariables {
+				SubsetOf: AllVariables;
+			}
+			Set sActiveConstraints {
+				SubsetOf: AllConstraints;
+			}
+		}
+		Procedure procSolveProblem {
+			Body: {
+				sActiveDecisionVariables := AllVariables * decDecisionVariables;
+				sActiveConstraints := AllConstraints * decConstraints;
+				
+				solve mpProblem;
+			}
+		}
+	}
+	Section secOutputData {
+		DeclarationSection decOutputIdentifiers {
+			StringParameter spOptimizacionStatus;
+			Parameter pTotalCost;
+			Parameter pQuantityExchanged_Value {
+				IndexDomain: (iSource,iCustomer);
+			}
+			Parameter pQuantityExchanged_ReducedCost {
+				IndexDomain: (iSource,iCustomer);
+			}
+			Parameter pSourceLimit_Slack {
+				IndexDomain: iSource;
+			}
+			Parameter pSourceLimit_ShadowPrice {
+				IndexDomain: iSource;
+			}
+			Parameter pDemandLimit_Slack {
+				IndexDomain: iCustomer;
+			}
+			Parameter pDemandLimit_ShadowPrice {
+				IndexDomain: iCustomer;
+			}
+		}
+		DeclarationSection decOutputDataFileName {
+			StringParameter spOutputDataFileName;
+		}
+		Procedure procGenerateOutputData {
+			Body: {
+				spOptimizacionStatus := mpProblem.ProgramStatus;
+				
+				pTotalCost := vTotalCost;
+				
+				pQuantityExchanged_Value(iSource, iCustomer) :=
+					vQuantityExchanged(iSource, iCustomer);
+				pQuantityExchanged_ReducedCost(iSource, iCustomer) :=
+					vQuantityExchanged(iSource, iCustomer).ReducedCost;
+				
+				pSourceLimit_Slack(iSource) :=
+					pProductionLimit(iSource) - sum(iCustomer, pQuantityExchanged_Value(iSource, iCustomer));
+				pSourceLimit_ShadowPrice(iSource)
+					:= cProductionLimit(iSource).ShadowPrice;
+				
+				pDemandLimit_Slack(iCustomer) :=
+					pDemandLimit(iCustomer) - sum(iSource, pQuantityExchanged_Value(iSource, iCustomer));
+				pDemandLimit_ShadowPrice(iCustomer) := cDemandLimit(iCustomer).ShadowPrice;
+			}
+		}
+		Procedure procWriteDataInExcel {
+			Body: {
+				spOutputDataFileName := spInputDataFileName - ".xlsx" + "_results.xlsx";
+				
+				block
+						axll::CreateNewWorkBook(spOutputDataFileName, "Hoja1");
+				
+					lspText := "OUTPUT DATA";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "B2" );
+				
+					! Print solver status
+					lspText := "Solver status";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "B4" );
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : spOptimizacionStatus,
+				        	Cell            : "D4" );
+				
+					! Print total transportation cost        
+					lspText := "Total transportation cost";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "B6" );
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : pTotalCost,
+				        	Cell            : "D6" );
+				
+					! Print quantity exchanged between sources and customers
+					lspText := "Quantity exchanged between sources and customers";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "B8" );
+				
+					lspQuantityExchanged_Value(iSource, iCustomer) := "0";
+					lspQuantityExchanged_Value(
+							(iSource, iCustomer) | pQuantityExchanged_Value(iSource, iCustomer)
+						):= pQuantityExchanged_Value(iSource, iCustomer);
+				
+					axll::WriteCompositeTable(
+				        	IdentifierReference : lspQuantityExchanged_Value,
+				        	TopLeftCell         : "B10");
+				
+					lspText := "Source";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "B10" );
+				
+					lspText := "Customer";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "C10" );
+				
+					lspText := "Quantity";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "D10" );
+				
+					! Print sensibility analysis - sources
+					lspText := "Sensibility analysis - sources";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "B24" );
+				
+					lspSourceLimit_Slack(iSource) := "0";
+					lspSourceLimit_Slack(
+							iSource | pSourceLimit_Slack(iSource)
+						):= pSourceLimit_Slack(iSource);
+				
+					axll::WriteCompositeTable(
+				        	IdentifierReference : lspSourceLimit_Slack,
+				        	TopLeftCell         : "B26");
+				
+					lspSourceLimit_ShadowPrice(iSource) := "0";
+					lspSourceLimit_ShadowPrice(
+							iSource | pSourceLimit_ShadowPrice(iSource)
+						):= pSourceLimit_ShadowPrice(iSource);
+				
+					axll::FillList(lspSourceLimit_ShadowPrice(iSource), "B27:B28", "D27:D28");
+				
+					lspText := "Source";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "B26" );
+				
+					lspText := "Slack";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "C26" );
+				
+					lspText := "Shadow price";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "D26" );
+				
+					! Print sensibility analysis - customers
+					lspText := "Sensibility analysis - customers";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "B30" );
+				
+					lspDemandLimit_Slack(iCustomer) := "0";
+					lspDemandLimit_Slack(
+							iCustomer | pDemandLimit_Slack(iCustomer)
+						):= pDemandLimit_Slack(iCustomer);
+				
+					axll::WriteCompositeTable(
+				        	IdentifierReference : lspDemandLimit_Slack,
+				        	TopLeftCell         : "B32");
+				
+					lspDemandLimit_ShadowPrice(iCustomer) := "0";
+					lspDemandLimit_ShadowPrice(
+							iCustomer | pDemandLimit_ShadowPrice(iCustomer)
+						):= pDemandLimit_ShadowPrice(iCustomer);
+				
+					axll::FillList(lspDemandLimit_ShadowPrice(iCustomer), "B33:B38", "D33:D38");
+				
+					lspText := "Customer";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "B32" );
+				
+					lspText := "Slack";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "C32" );
+				
+					lspText := "Shadow price";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "D32" );
+				
+					! Print sensibility analysis - transportation flows
+					lspText := "Sensibility analysis - transportation flows";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "B40" );
+				
+					lspQuantityExchanged_Value(iSource, iCustomer) := "0";
+					lspQuantityExchanged_Value(
+							(iSource, iCustomer) | pQuantityExchanged_Value(iSource, iCustomer)
+						):= pQuantityExchanged_Value(iSource, iCustomer);
+				
+					axll::WriteCompositeTable(
+				        	IdentifierReference : lspQuantityExchanged_Value,
+				        	TopLeftCell         : "B42");
+				
+					lspQuantityExchanged_ReducedCost(iSource, iCustomer) := "0";
+					lspQuantityExchanged_ReducedCost(
+							(iSource, iCustomer) | pQuantityExchanged_ReducedCost(iSource, iCustomer)
+						):= pQuantityExchanged_ReducedCost(iSource, iCustomer);
+				
+					axll::FillList(lspQuantityExchanged_ReducedCost(iSource, iCustomer), "B43:C54", "E43:E54");
+				
+					lspText := "Source";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "B42" );
+				
+					lspText := "Customer";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "C42" );
+				
+					lspText := "Quantity";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "D42" );
+				
+					lspText := "Reduced cost";
+				
+					axll::WriteSingleValue(
+				        	ScalarReference : lspText,
+				        	Cell            : "E42" );
+				
+					! Close the Excel file        
+					axll::CloseWorkBook(spOutputDataFileName);
+				
+				onerror err do
+				
+					DialogMessage("Close the Excel file if it is open and try again.");
+				
+				endblock;
+			}
+			ElementParameter err {
+				Range: errh::PendingErrors;
+			}
+			StringParameter lspText;
+			StringParameter lspQuantityExchanged_Value {
+				IndexDomain: (iSource,iCustomer);
+			}
+			StringParameter lspQuantityExchanged_ReducedCost {
+				IndexDomain: (iSource,iCustomer);
+			}
+			StringParameter lspSourceLimit_Slack {
+				IndexDomain: iSource;
+			}
+			StringParameter lspSourceLimit_ShadowPrice {
+				IndexDomain: iSource;
+			}
+			StringParameter lspDemandLimit_Slack {
+				IndexDomain: iCustomer;
+			}
+			StringParameter lspDemandLimit_ShadowPrice {
+				IndexDomain: iCustomer;
+			}
+		}
+	}
+	Procedure MainInitialization {
+		Comment: "Add initialization statements here that do NOT require any library being initialized already.";
+	}
+	Procedure PostMainInitialization {
+		Comment: {
+			"Add initialization statements here that require that the libraries are already initialized properly,
+			or add statements that require the Data Management module to be initialized."
+		}
+	}
+	Procedure MainExecution {
+		Body: {
+			empty sIdentifiersToClean;
+			
+			sIdentifiersToClean := AllIdentifiers - AllIdentifiers * decInputDataFileName;
+			
+			empty sIdentifiersToClean;
+			
+			DialogGetString(
+			        "Select the input data file name to work with:",
+			       	spInputDataFileName,
+			        "Input data file name"
+			        );
+			
+			procReadInputDataFromExcel;
+			
+			procSolveProblem;
+			
+			procGenerateOutputData;
+			
+			procWriteDataInExcel;
+		}
+	}
+	Procedure PreMainTermination {
+		Body: {
+			return DataManagementExit();
+		}
+		Comment: {
+			"Add termination statements here that require all libraries to be still alive.
+			Return 1 if you allow the termination sequence to continue.
+			Return 0 if you want to cancel the termination sequence."
+		}
+	}
+	Procedure MainTermination {
+		Body: {
+			return 1;
+		}
+		Comment: {
+			"Add termination statements here that do not require all libraries to be still alive.
+			Return 1 to allow the termination sequence to continue.
+			Return 0 if you want to cancel the termination sequence.
+			It is recommended to only use the procedure PreMainTermination to cancel the termination sequence and let this procedure always return 1."
+		}
+	}
+	Section Quantities_and_Units {
+		Comment: {
+			"This section contains all the units and quantities that are added automatically by AIMMS.
+			It is recommended to declare all your quantities here."
+		}
+		Quantity SI_Time_Duration {
+			BaseUnit: s;
+			Conversions: minute->s : #-># * 60;
+			Comment: {
+				"Expresses the value for the duration of periods.
+				
+				The unit s has been added automatically because it is a required unit for AimmsWebUI.
+				
+				The unit minute has been added automatically because it is a required unit for AimmsWebUI."
+			}
+		}
+	}
+}

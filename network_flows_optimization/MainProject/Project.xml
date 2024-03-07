@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<Project AimmsVersion="24.2.3.3 unicode x64" ProjectUUID="DD8089EE-2749-43BA-8892-2DF3F4C9ED15">
+	<ModelFileName>network_flows_optimization.ams</ModelFileName>
+	<AutoSaveAndBackup>
+		<DataBackup AtRegularInterval="true" EveryNMinutes="15" NumBackupsDatedToday="3" NumDaysBeforeToday="3" />
+	</AutoSaveAndBackup>
+</Project>

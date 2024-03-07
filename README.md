@@ -10,7 +10,7 @@ When you open the project, a dialog message appears asking for an input data fil
 
 If you want to try the model again, you can close and open the project or run 'MainExecution' procedure (see Image4.PNG and Image5.PNG). 
  
-We have four data file in 'network_flows_optimization\data' folder that we can use to try the code:
+We have four data files in 'network_flows_optimization\data' folder that we can use to try the code:
 * data_0.xlsx. This is the base case.
 * data_1.xlsx. Shadow price interpretation for source constraints. Using base case, we move one ton of supply capacity from Gouda to Arnhem and the objective function improves in 0.2 euros (shadow price for Arnhem in the base case).
 * data_2.xlsx. Shadow price interpretation for customer constraints - case 1. Using the base case, we increase the demand in London in one ton and we increase one ton of supply capacity in Gouda (Gouda is the only source for London). Then the objective function gets worse in 2.5 euros (shadow price for London in the base case).
